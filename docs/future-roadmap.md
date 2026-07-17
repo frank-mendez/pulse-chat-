@@ -4,7 +4,7 @@ PulseChat should evolve in clear phases. Do not skip phases without updating thi
 
 ## Phase 0: Documentation and Bootstrap
 
-Status: in progress.
+Status: complete.
 
 Goals:
 
@@ -17,15 +17,18 @@ Goals:
 
 Exit criteria:
 
-- Documentation exists and reflects current repo state.
+- Documentation exists and reflects repo state.
 - Next implementation task is clear.
 
 ## Phase 1: In-Memory Global Chat
 
-Status: planned.
+Status: implemented.
 
 Scope:
 
+- Anonymous username join.
+- Single global room.
+- In-memory messages and online users.
 - No authentication.
 - No database.
 - No Redis.
@@ -56,46 +59,86 @@ Technical goals:
 - Zustand WebSocket state.
 - Focused tests for contracts, services, gateway, and frontend state.
 
-## Phase 2: Local Developer Hardening
+## Phase 2: Persistent Authenticated Messaging
 
-Status: planned.
+Status: implemented.
 
-Potential scope:
+Scope:
 
-- Dockerfile for server.
-- Docker Compose for local development if useful.
-- CI workflow for lint, typecheck, test, and build.
-- More complete test coverage.
-- Structured server logging.
-- Better frontend error boundaries.
-- Local environment example files.
-
-## Phase 3: Persistence and Identity
-
-Status: planned.
-
-Potential scope:
-
-- PostgreSQL with Neon as future hosted target.
+- Authentication.
+- PostgreSQL.
+- Drizzle ORM.
+- One-to-one conversations.
 - Message persistence.
-- User accounts or lightweight identity.
-- Database migrations.
-- Repository/data-access layer.
-- History pagination.
-- Session restoration.
+- Message history through REST.
+- Authenticated REST requests.
+- Authenticated WebSockets.
+- Optimistic UI.
+- Duplicate prevention through `clientMessageId`.
+- TanStack Query for REST server state.
+- Zustand for WebSocket and realtime state.
 
-## Phase 4: Rooms and Authorization
+Completed features:
+
+- Registration, login, logout, `/me`, and protected frontend routes.
+- Secure password hashing.
+- Hashed session tokens stored server-side.
+- Cookie-based session persistence.
+- Drizzle schema and SQL migration for users, sessions, conversations, members, and messages.
+- Repository interface with PostgreSQL and in-memory implementations.
+- User search.
+- One-to-one conversation creation.
+- Conversation list.
+- Message history.
+- Message creation through REST.
+- Live message delivery through WebSockets.
+- Delivery confirmation.
+- Typing indicators.
+- Presence events.
+- Read receipt events.
+- Frontend conversation sidebar and chat route.
+
+Not included:
+
+- Redis.
+- Docker.
+- Observability.
+- Horizontal scaling.
+- Kubernetes.
+- Production deployment optimization.
+- Group conversations.
+- Attachments.
+- Reactions.
+- Full text search.
+
+## Phase 3: Developer Hardening
 
 Status: planned.
 
 Potential scope:
 
-- Multiple chat rooms.
-- Room membership.
-- Room-level authorization.
-- Direct messages.
+- CI workflow for install, build, typecheck, lint, test, and format check.
+- Browser smoke tests for register/login/conversation/message flows.
+- Component tests for core UI states.
+- More REST and WebSocket negative-path coverage.
+- Optional Docker Compose for local PostgreSQL.
+- Better frontend error boundaries.
+- Seed script for local demo users.
+
+## Phase 4: Rooms, Authorization, and Product Depth
+
+Status: planned.
+
+Potential scope:
+
+- Group conversations.
+- Conversation membership invitations.
+- Richer authorization boundaries.
 - User profiles.
+- Message history pagination.
+- Message editing and soft deletion.
 - Moderation primitives.
+- Search.
 
 ## Phase 5: Distributed Real-Time Infrastructure
 
@@ -118,9 +161,8 @@ Potential scope:
 
 - Vercel deployment for web app.
 - Railway deployment for server.
-- Neon PostgreSQL.
-- Grafana Cloud dashboards.
-- Metrics, logs, traces.
+- Neon PostgreSQL or equivalent hosted database.
+- Metrics, logs, traces, and dashboards.
 - Operational runbooks.
 - Security hardening.
 - Production CORS/origin policy.
@@ -128,7 +170,7 @@ Potential scope:
 
 ## Roadmap Rules
 
-- Keep Phase 1 small and focused.
+- Keep the current phase focused.
 - Record major phase changes in `docs/project-decisions.md`.
 - Update `README.md` current status when phases change.
 - Update `docs/context-handoff.md` every session.

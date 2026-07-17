@@ -4,73 +4,146 @@ Last updated: 2026-07-17
 
 ## Current Phase
 
-Documentation/bootstrap.
+Phase 2 implemented: persistent authenticated one-to-one messaging.
 
 ## Completed Work
 
-- Created comprehensive `README.md`.
-- Created `AGENTS.md` as the primary onboarding guide for future AI coding agents.
-- Created developer documentation under `docs/`.
-- Captured target Phase 1 architecture and WebSocket protocol.
-- Recorded initial architectural decisions.
-- Created future roadmap.
+- Added REST resource schemas, conversation/message schemas, public user schemas, and expanded WebSocket event contracts in `packages/contracts`.
+- Added Drizzle ORM, PostgreSQL schema, and SQL migration for users, sessions, conversations, conversation members, and messages.
+- Added `AppRepository` with PostgreSQL and in-memory implementations.
+- Added secure session authentication with registration, login, logout, password hashing, hashed session tokens, expiration, and revocation.
+- Added REST routes for auth, `/me`, users, conversations, message history, and message creation.
+- Reworked WebSocket gateway to require authenticated sessions and handle live conversation, message, typing, presence, read receipt, ping/pong, and safe error events.
+- Added TanStack Query API client/query setup and Zustand realtime store updates in the web app.
+- Added `/login`, `/register`, `/conversations`, and `/chat/:conversationId` routes.
+- Added conversation sidebar, conversation list, avatar, typing, unread, skeleton, empty, header, and delivery-status UI components.
+- Added optimistic message sending and delivery reconciliation by `clientMessageId`.
+- Added `.env.example` files for server and web.
+- Added root Drizzle scripts: `pnpm db:generate` and `pnpm db:migrate`.
+- Updated README, AGENTS, architecture, protocol, coding guidelines, workflow, roadmap, project decisions, and this handoff.
 
 ## Files Modified
+
+Root/tooling:
+
+- `.gitignore`
+- `.husky/pre-commit`
+- `.prettierrc.json`
+- `eslint.config.mjs`
+- `package.json`
+- `pnpm-lock.yaml`
+- `pnpm-workspace.yaml`
+- `tsconfig.json`
+- `turbo.json`
+
+Server:
+
+- `apps/server/.env.example`
+- `apps/server/drizzle.config.ts`
+- `apps/server/drizzle/0001_phase_2_messaging.sql`
+- `apps/server/package.json`
+- `apps/server/src/auth/**`
+- `apps/server/src/config/app-config.ts`
+- `apps/server/src/db/schema.ts`
+- `apps/server/src/messaging/**`
+- `apps/server/src/repositories/**`
+- `apps/server/src/server/**`
+- `apps/server/src/websocket/**`
+- Existing Phase 1 chat/users/validation tests remain.
+
+Web:
+
+- `apps/web/.env.example`
+- `apps/web/package.json`
+- `apps/web/src/App.tsx`
+- `apps/web/src/components/chat/MessageInput.tsx`
+- `apps/web/src/components/conversations/**`
+- `apps/web/src/lib/api-client.ts`
+- `apps/web/src/lib/api-url.ts`
+- `apps/web/src/lib/query-client.ts`
+- `apps/web/src/lib/query-keys.ts`
+- `apps/web/src/main.tsx`
+- `apps/web/src/routes/**`
+- `apps/web/src/state/chat-store.ts`
+- `apps/web/src/vite-env.d.ts`
+
+Packages:
+
+- `packages/contracts/src/common.schema.ts`
+- `packages/contracts/src/events.schema.ts`
+- `packages/contracts/src/events.schema.test.ts`
+- `packages/contracts/src/index.ts`
+- `packages/contracts/src/protocol.constants.ts`
+- `packages/contracts/src/resources.schema.ts`
+
+Documentation:
 
 - `README.md`
 - `AGENTS.md`
 - `docs/architecture.md`
-- `docs/websocket-protocol.md`
 - `docs/coding-guidelines.md`
 - `docs/development-workflow.md`
-- `docs/project-decisions.md`
-- `docs/context-handoff.md`
 - `docs/future-roadmap.md`
+- `docs/project-decisions.md`
+- `docs/websocket-protocol.md`
+- `docs/context-handoff.md`
 
 ## Architectural Decisions
 
-- Documentation-first bootstrap is the initial project step.
-- Target architecture is a pnpm/Turborepo monorepo.
-- Frontend target stack: React, Vite, TypeScript, TailwindCSS, shadcn/ui, Zustand, TanStack Query when appropriate.
-- Backend target stack: Node.js, Fastify, TypeScript, `ws`, Zod.
-- Shared WebSocket contracts must live in `packages/contracts`.
-- Phase 1 remains in-memory with no auth, database, Redis, Docker, observability, or deployment.
+- Phase 2 uses secure cookie sessions instead of Better Auth for explicit learning, small dependency surface, and inspectable auth mechanics.
+- Passwords are hashed with Node `scrypt`.
+- Session tokens are random, sent only as cookies, and stored server-side only as hashes.
+- PostgreSQL persistence is modeled with Drizzle schema and SQL migrations.
+- Services depend on `AppRepository`, not Drizzle.
+- In-memory repository remains for tests and no-database local runs.
+- REST owns historical state loading and request/response workflows.
+- WebSockets own only live events.
+- TanStack Query owns REST server state in the frontend.
+- Zustand owns WebSocket lifecycle, realtime UI state, and optimistic realtime updates.
+- Legacy Phase 1 global-chat services and contracts remain for compatibility tests/reference, but new product behavior must use authenticated messaging modules.
 
 ## Breaking Changes
 
-- None. No application code existed before this session.
+- Phase 2 application flow replaces anonymous global-room joins with authenticated routes and conversations.
+- `message.send` WebSocket payload now requires `conversationId` and `clientMessageId`.
+- Message payloads exposed to the Phase 2 UI are `PersistentMessage` objects with nested `sender` data instead of Phase 1 `ChatMessage` objects.
+- WebSocket connections without a valid session now close with `UNAUTHORIZED` and code `1008`.
 
 ## Known Issues
 
-- No package manager files exist yet.
-- No application code exists yet.
-- No scripts, tests, linting, formatting, or CI exist yet.
-- License has not been chosen or added as a `LICENSE` file.
+- No CI workflow exists yet.
+- No Docker Compose setup exists yet for local PostgreSQL.
+- No browser-driven smoke tests exist for register/login/conversation/message flows.
+- No component tests yet for the new Phase 2 UI states.
+- PostgreSQL repository does not yet have integration tests against a real database.
+- License is still TBD and no `LICENSE` file exists.
+- Group conversations, attachments, reactions, search, Redis, observability, and production deployment remain out of scope.
 
 ## TODOs
 
-- Scaffold root pnpm workspace and Turborepo configuration.
-- Add strict TypeScript, ESLint, Prettier, Husky, and lint-staged.
-- Create `packages/contracts`.
-- Create `apps/server`.
-- Create `apps/web`.
-- Add tests and CI.
-- Choose and add a license.
+- Add GitHub Actions workflow for `pnpm install`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm format:check`.
+- Add browser smoke tests for register/login/create conversation/send message across two users.
+- Add component tests for auth pages, conversation list states, chat empty/loading/error states, and optimistic message states.
+- Add Docker Compose or another documented local PostgreSQL setup if Phase 3 includes Docker.
+- Add PostgreSQL-backed repository integration tests.
+- Decide and add a license.
 
 ## Recommended Next Task
 
-Scaffold the monorepo foundation: root `package.json`, `pnpm-workspace.yaml`, `turbo.json`, shared TypeScript config, ESLint, Prettier, Husky, lint-staged, and initial empty app/package folders.
+Create Phase 3 developer hardening: CI plus browser smoke coverage for the authenticated messaging flow.
 
 ## Potential Risks
 
-- Future agents may accidentally implement app-specific contracts outside `packages/contracts`.
-- Socket.IO or database/auth features could be introduced too early and dilute Phase 1 learning goals.
-- Documentation may drift unless updated as part of every implementation session.
+- Future agents could accidentally reintroduce WebSocket history fetching instead of using REST and TanStack Query.
+- In-memory and PostgreSQL repositories can drift without shared repository contract tests.
+- Cookie security settings must be reviewed before any HTTPS deployment.
+- Presence is process-local and will not work across multiple server instances without Redis or another coordination layer.
+- Shared packages require builds before app runtime; add watch-mode package builds if shared contract iteration becomes painful.
 
 ## Questions for Future Implementation
 
-- What exact package names should be used? Suggested: `@pulse-chat/contracts`, `@pulse-chat/config`, `@pulse-chat/ui`, `@pulse-chat/utils`.
-- Should duplicate active usernames be rejected or should the server append disambiguators?
-- What message history cap should Phase 1 use?
-- Should the frontend route guard require a joined username before entering `/chat`?
+- Should Phase 3 use Playwright for browser smoke tests?
+- Should local PostgreSQL setup be Docker Compose or documented host-installed Postgres first?
 - Which license should be used before public release?
+- When should Better Auth or another auth system be reconsidered for password reset, OAuth, email verification, or MFA?
+- Should legacy Phase 1 chat/users modules be removed once no tests or docs rely on them?

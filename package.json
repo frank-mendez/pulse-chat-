@@ -1,0 +1,48 @@
+{
+  "name": "pulse-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.29.3",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "dev": "pnpm build:packages && turbo dev --parallel",
+    "build:packages": "turbo build --filter=@pulse-chat/contracts --filter=@pulse-chat/utils",
+    "db:generate": "drizzle-kit generate --config apps/server/drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config apps/server/drizzle.config.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo lint",
+    "prepare": "husky",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,md,css}": [
+      "prettier --write",
+      "eslint --fix"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.7",
+    "@types/ws": "^8.5.13",
+    "drizzle-kit": "^0.30.2",
+    "eslint": "^9.18.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.1",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.4",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^2.1.8"
+  }
+}

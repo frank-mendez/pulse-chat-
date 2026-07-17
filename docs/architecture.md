@@ -1,53 +1,78 @@
 # Architecture
 
-PulseChat is designed as a TypeScript monorepo with separate frontend, backend, and shared package boundaries. The Phase 1 implementation is intentionally small and in-memory, but the architecture should remain compatible with later persistence, authentication, observability, and horizontal scaling.
+PulseChat is a TypeScript monorepo with separate frontend, backend, and shared package boundaries. The current implementation is Phase 2: authenticated one-to-one messaging with persistent storage, REST APIs for existing state, and WebSockets for realtime updates.
 
 ## Current Phase
 
-Current phase: documentation/bootstrap.
+Current phase: Phase 2 implemented.
 
-The repository currently contains documentation only. Application code, package manager configuration, tests, and CI have not been scaffolded yet. This document defines the target architecture for Phase 1.
+The repository contains:
+
+- React/Vite frontend with protected auth and messaging routes.
+- Fastify REST API with cookie sessions.
+- Authenticated `ws` WebSocket gateway.
+- Shared Zod contracts for REST resources and WebSocket events.
+- Drizzle/PostgreSQL schema and migration.
+- Repository interface with PostgreSQL and in-memory implementations.
+
+Redis, Docker, observability, horizontal scaling, production deployment, group chat, attachments, reactions, and search remain out of scope.
 
 ## System Context
 
 ```mermaid
 flowchart LR
   User[User Browser] --> Web[React Web App]
-  Web -->|WebSocket JSON events| Server[Fastify/ws Server]
-  Server --> Contracts[Shared Zod Contracts]
-  Web --> Contracts
-  Server --> Memory[(In-Memory State)]
+  Web -->|REST JSON + Cookie| Api[Fastify REST API]
+  Web -->|WebSocket + Cookie| Gateway[ws Gateway]
+  Api --> Auth[Auth Service]
+  Gateway --> Auth
+  Api --> Messaging[Messaging Service]
+  Gateway --> Messaging
+  Auth --> Repo[AppRepository]
+  Messaging --> Repo
+  Repo --> Pg[(PostgreSQL)]
+  Repo -. tests / no DATABASE_URL .-> Memory[(In-Memory Repository)]
+  Web --> Contracts[packages/contracts]
+  Api --> Contracts
+  Gateway --> Contracts
 ```
 
-Phase 1 state is process-local. Restarting the server clears message history and connected user state.
+REST owns historical state and request/response workflows. WebSockets own only live events.
 
-## Target Monorepo Layout
+## Monorepo Layout
 
 ```text
 apps/
   web/
     src/
-      app/
       components/
-      features/chat/
+        chat/
+        conversations/
+        ui/
+      lib/
       routes/
       state/
       styles/
+      test/
   server/
+    drizzle/
     src/
-      server/
-      websocket/
+      auth/
       chat/
-      users/
       config/
+      db/
+      messaging/
+      repositories/
+      server/
+      users/
       validation/
+      websocket/
 packages/
   contracts/
   config/
-  ui/
   utils/
 docs/
-.github/
+.husky/
 ```
 
 ## Application Responsibilities
@@ -58,52 +83,57 @@ Owns the browser experience.
 
 Responsibilities:
 
-- Render `/` join screen.
-- Render `/chat` main chat experience.
-- Connect to the WebSocket endpoint.
-- Manage WebSocket connection state with Zustand.
-- Display messages, online users, connection state, loading state, and errors.
-- Validate assumptions at the UI boundary when useful, but rely on server validation for trust.
-- Import event schemas and types from `packages/contracts`.
+- Render `/login`, `/register`, `/conversations`, and `/chat/:conversationId`.
+- Use the API client for authenticated REST calls with `credentials: include`.
+- Use TanStack Query for server state: current user, users, conversations, and messages.
+- Use Zustand for WebSocket connection state, realtime event handling, typing state, presence state, optimistic message updates, and current conversation selection.
+- Parse server responses and WebSocket events with shared contracts.
+- Render loading, empty, error, connected, reconnecting, disconnected, and optimistic-send states.
+- Keep UI primitives local until genuine shared reuse appears.
 
 Non-responsibilities:
 
 - Database access.
+- Drizzle table imports.
 - Server-side domain logic.
-- Re-defining WebSocket event types.
-- Trusting local user input as valid server data.
+- Re-defining REST or WebSocket contracts.
+- Trusting browser state, URL params, local storage, or WebSocket payloads as authoritative.
 
 ### `apps/server`
 
-Owns backend process startup, HTTP server setup, WebSocket connections, validation boundary, and in-memory services.
+Owns backend process startup, HTTP routes, WebSocket upgrades, authentication, messaging business logic, and persistence boundaries.
 
-Target modules:
+Implemented modules:
 
-- `server`: Fastify app setup, health route, WebSocket upgrade integration, lifecycle.
-- `websocket`: gateway, connection registry integration, event dispatch, send/broadcast helpers, heartbeat.
-- `chat`: message creation, history, message limits, chat domain rules.
-- `users`: username registration, presence, connected users list, disconnect behavior.
-- `config`: environment parsing, port, host, CORS/origin rules, heartbeat intervals.
-- `validation`: helpers for safely parsing incoming WebSocket JSON and mapping Zod errors.
+- `server`: Fastify app setup, CORS, cookie plugin, health route, REST routes, WebSocket upgrade integration, lifecycle.
+- `auth`: registration, login, logout, session creation, session validation, password hashing with Node `scrypt`, and hashed session tokens.
+- `messaging`: one-to-one conversation creation, message creation, membership checks, duplicate prevention, read state, and conversation/message listing.
+- `repositories`: `AppRepository` interface, in-memory implementation, and PostgreSQL implementation.
+- `db`: Drizzle table schema.
+- `websocket`: authenticated gateway, connection registry, event dispatch, send/broadcast helpers, presence, typing, read receipts, heartbeat.
+- `validation`: helpers for safely parsing incoming WebSocket JSON and mapping invalid payloads.
+- `config`: environment parsing and defaults.
+- `chat` and `users`: legacy Phase 1 global-chat services retained for tests/reference. New Phase 2 behavior must not be routed through them.
 
 Non-responsibilities:
 
 - UI rendering.
 - Frontend state management.
 - Duplicating shared contracts.
-- Long-term persistence in Phase 1.
+- Loading historical data through WebSocket events.
 
 ### `packages/contracts`
 
-Owns the protocol between apps.
+Owns the client/server protocol.
 
 Responsibilities:
 
-- Zod schemas for client-to-server events.
-- Zod schemas for server-to-client events.
+- Zod schemas for REST request and response resources.
+- Zod schemas for client-to-server WebSocket events.
+- Zod schemas for server-to-client WebSocket events.
 - Inferred TypeScript types.
 - Event discriminated unions.
-- Protocol constants such as event names and payload limits when shared.
+- Protocol constants such as event names, payload limits, and error code values.
 
 Rules:
 
@@ -113,20 +143,7 @@ Rules:
 
 ### `packages/config`
 
-Owns shared tool configuration.
-
-Examples:
-
-- Base TypeScript config.
-- ESLint config.
-- Prettier config.
-- Vitest config helpers if needed.
-
-### `packages/ui`
-
-Owns reusable UI primitives only when reuse is real.
-
-Phase 1 chat-specific components should usually start in `apps/web`. Move components to `packages/ui` only when they become generic and useful across apps.
+Owns shared TypeScript configuration.
 
 ### `packages/utils`
 
@@ -134,9 +151,9 @@ Owns framework-agnostic helpers.
 
 Allowed:
 
-- Date formatting helpers that do not depend on browser-only APIs.
-- ID helper wrappers if they are platform-neutral.
+- ID helper wrappers.
 - Exhaustiveness helpers.
+- Pure utility functions with no app dependencies.
 
 Not allowed:
 
@@ -148,113 +165,174 @@ Not allowed:
 
 ## Frontend Architecture
 
-Target routes:
+Routes:
 
-- `/`: join screen for username entry.
-- `/chat`: main chat room.
+- `/login`: login with username and password.
+- `/register`: create account with username, display name, and password.
+- `/conversations`: authenticated conversation list and user search/start flow.
+- `/chat/:conversationId`: authenticated conversation view.
 
-Target components:
+Core state:
 
-- `ChatHeader`
-- `ChatMessages`
-- `MessageBubble`
-- `MessageInput`
-- `OnlineUsers`
-- `ConnectionBadge`
-- `LoadingScreen`
-- `ErrorBanner`
-
-State rules:
-
-- Zustand is used only for WebSocket lifecycle and real-time chat state.
+- TanStack Query caches REST state through `queryKeys`.
+- Zustand realtime store owns WebSocket connection status, typing users, presence, current conversation, and outbound realtime events.
 - Component-local state is preferred for simple input fields and UI-only toggles.
-- TanStack Query should not manage WebSocket streams. Use it later for HTTP server state if needed.
 
-Expected connection states:
+Important frontend modules:
 
-- `idle`
-- `connecting`
-- `connected`
-- `reconnecting`
-- `disconnected`
-- `error`
+- `lib/api-client.ts`: typed REST client with Zod response parsing.
+- `lib/query-client.ts`: shared TanStack Query client.
+- `lib/query-keys.ts`: query key factory.
+- `lib/api-url.ts`: REST base URL resolution from `VITE_API_URL`.
+- `lib/websocket-url.ts`: WebSocket URL resolution from `VITE_WS_URL`.
+- `lib/server-event-parser.ts`: server event parser.
+- `state/chat-store.ts`: WebSocket lifecycle and realtime event reducer.
+- `state/reconnect.ts`: reconnect delay calculation.
+
+State ownership rule:
+
+- REST data belongs in TanStack Query.
+- WebSocket lifecycle and transient realtime UI belongs in Zustand.
+- Form fields and open/closed UI toggles belong in local component state.
 
 ## Backend Architecture
 
-Target flow:
+### REST Flow
 
 ```mermaid
 flowchart TB
-  Raw[Raw WebSocket Message] --> Parse[Parse JSON Safely]
+  Request[HTTP Request] --> Cookie[Read Session Cookie]
+  Request --> Validate[Validate Body/Params/Query with Zod]
+  Cookie --> Auth[Auth Service]
+  Validate --> Route[Route Handler]
+  Auth --> Route
+  Route --> Service[Auth or Messaging Service]
+  Service --> Repo[AppRepository]
+  Repo --> Response[Contract-shaped Response]
+```
+
+REST route responsibilities:
+
+- Read and set cookies.
+- Authenticate when required.
+- Validate request bodies, params, and query values.
+- Call services or repository read helpers.
+- Send safe status codes and contract-shaped responses.
+
+REST routes must not own business rules.
+
+### WebSocket Flow
+
+```mermaid
+flowchart TB
+  Upgrade[WebSocket Upgrade] --> Cookie[Parse Session Cookie]
+  Cookie --> Auth[Authenticate Token]
+  Auth --> Accepted{Authenticated?}
+  Accepted -->|No| Reject[Send UNAUTHORIZED error and close 1008]
+  Accepted -->|Yes| Session[Register Client Session]
+  Session --> Presence[Broadcast presence.updated]
+  Session --> Raw[Raw WebSocket Message]
+  Raw --> Parse[Parse JSON Safely]
   Parse --> Validate[Validate with Zod Contract]
   Validate --> Dispatch[Dispatch by Event Type]
-  Dispatch --> Services[Call Chat/User Services]
-  Services --> Events[Create Server Events]
-  Events --> Send[Send or Broadcast]
+  Dispatch --> Messaging[Call Messaging Service]
+  Messaging --> Events[Send or Broadcast Events]
 ```
 
 WebSocket gateway responsibilities:
 
-- Accept and close connections.
-- Track connection identifiers.
+- Authenticate each connection with the secure session cookie.
+- Track connected sessions by generated client ID and public user.
 - Parse incoming JSON safely.
 - Validate payloads with contracts.
-- Route valid events to services.
-- Convert service results into server events.
-- Send direct events and broadcasts.
+- Return `UNKNOWN_EVENT` for unknown discriminants and `VALIDATION_ERROR` for malformed known events.
+- Route valid events to messaging services.
+- Broadcast conversation, message, typing, read receipt, and presence events.
 - Run heartbeat checks.
 - Remove clients on disconnect.
 
-Service responsibilities:
-
-- `chat` creates messages, stores in-memory history, enforces message limits, and returns domain objects.
-- `users` validates username availability rules, tracks online users, and removes users on disconnect.
-
 Business logic must live in services, not gateway handlers.
 
-## Data Model: Phase 1
+## Data Model
 
-Expected domain objects:
+Database tables:
 
-```ts
-type User = {
-  id: string;
-  username: string;
-  joinedAt: string;
-};
+- `users`: account identity, username, display name, optional avatar URL, timestamps.
+- `sessions`: hashed session token, user reference, expiration, revocation timestamp.
+- `conversations`: conversation metadata, currently `one_to_one`, timestamps, soft delete.
+- `conversation_members`: conversation membership and per-member `last_read_message_id`.
+- `messages`: persisted messages, sender, conversation, optional client message ID, timestamps, soft delete.
 
-type ChatMessage = {
-  id: string;
-  userId: string;
-  username: string;
-  body: string;
-  sentAt: string;
-};
-```
+Important constraints and indexes:
 
-These types should be represented through contracts or server domain modules as appropriate. Client-visible shapes must be exported from `packages/contracts`.
+- Usernames are unique case-insensitively.
+- Session token hashes are unique.
+- Conversation members are unique per conversation/user pair.
+- Messages prevent duplicate sender/client-message pairs.
+- Conversations and messages are indexed for list and history queries.
+
+Client-visible domain shapes:
+
+- `PublicUser`
+- `Conversation`
+- `PersistentMessage`
+- REST response schemas
+- WebSocket event schemas
+
+These shapes are exported from `packages/contracts`.
+
+## Persistence Strategy
+
+All persistence goes through `AppRepository`.
+
+Implementations:
+
+- `postgres.repository.ts`: Drizzle/PostgreSQL implementation used when `DATABASE_URL` is set.
+- `memory.repository.ts`: in-memory implementation used for tests and no-database local runs.
+
+Rules:
+
+- Services depend on the repository interface, not Drizzle.
+- REST and WebSocket layers do not import Drizzle.
+- Frontend never imports repository or database types.
+- Database schema changes require Drizzle schema updates and a migration.
+
+## Auth Strategy
+
+PulseChat uses secure session-based authentication:
+
+- Passwords are hashed with Node `scrypt`.
+- Session tokens are random and sent to the browser only as cookies.
+- Only session token hashes are stored server-side.
+- Logout revokes the current session.
+- REST requests use the same cookie as WebSocket authentication.
+- WebSocket connections without a valid session receive an `UNAUTHORIZED` error and close with code `1008`.
+
+Sensitive values must never be returned to clients.
 
 ## Boundary Rules
 
 - Apps may import from packages.
 - Packages must not import from apps.
-- Contracts are the only shared WebSocket protocol source.
+- Contracts are the only shared protocol source.
 - Frontend must not import server modules.
 - Server must not import frontend modules.
 - Validation happens before business logic.
 - Business logic stays outside transport handlers.
+- Persistence stays behind `AppRepository`.
 - No circular dependencies.
 
 ## Future Architecture Direction
 
 Later phases may add:
 
-- PostgreSQL for users and message persistence.
+- CI and browser smoke tests.
+- Docker Compose for local PostgreSQL.
+- Group conversations and richer authorization.
+- History pagination and search.
 - Redis pub/sub for multi-instance broadcast.
-- Authentication and authorization.
-- Room membership and direct messages.
-- Docker Compose for local dependencies.
-- CI/CD pipelines.
-- Metrics, structured logs, traces, and dashboards.
+- Presence synchronization.
+- Observability and production runbooks.
+- Deployment to Vercel/Railway/Neon or equivalent services.
 
 When those changes happen, update this document and record significant decisions in `docs/project-decisions.md`.

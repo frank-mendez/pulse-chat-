@@ -2,58 +2,76 @@
 
 ## Project Overview
 
-PulseChat is a production-inspired real-time messaging application for learning how modern full-stack systems are designed, built, validated, and evolved. The initial product is intentionally small: a single global chat room with usernames, online users, connection status, reconnect behavior, heartbeat checks, and in-memory message history.
+PulseChat is a production-inspired real-time messaging application for learning how modern full-stack systems are designed, built, validated, and evolved. The current product slice is a one-to-one messaging app with registration, login, protected routes, conversation creation, message history, optimistic sending, authenticated REST requests, and authenticated WebSocket events.
 
-The engineering goal is larger than the first feature set. Every choice should keep the project easy to extend toward persistence, authentication, distributed WebSocket infrastructure, observability, CI/CD, and production deployment.
+The engineering goal is larger than the feature set. PulseChat is intentionally structured so later phases can add Redis pub/sub, group conversations, observability, deployment automation, and production hardening without erasing the current boundaries.
 
 ## Learning Objectives
 
-- Build a real-time application with raw WebSockets.
+- Build real-time messaging with raw WebSockets.
 - Practice strict TypeScript across frontend, backend, and shared contracts.
 - Design clean full-stack boundaries in a monorepo.
-- Validate all network payloads with shared schemas.
-- Separate transport, business logic, validation, and UI state.
-- Prepare the codebase for Docker, CI/CD, observability, and distributed systems concepts.
+- Validate REST and WebSocket payloads with shared Zod schemas.
+- Separate persistence, business logic, transport, and UI state.
+- Understand how local in-memory development evolves toward PostgreSQL-backed persistence.
+- Keep documentation current as architecture changes.
 
 ## Architecture Diagram
 
 ```mermaid
 flowchart LR
-  Browser[React + Vite Client] -->|WebSocket events| Gateway[Fastify + ws Gateway]
-  Browser -->|HTTP health/config future| Http[Fastify HTTP Server]
-  Gateway --> Validation[Zod Validation]
-  Gateway --> Chat[Chat Service]
-  Gateway --> Users[User Presence Service]
-  Chat --> Memory[(In-Memory Message Store)]
-  Users --> Clients[(Connected Client Registry)]
+  Browser[React + Vite Client]
+  Query[TanStack Query Server State]
+  Store[Zustand Realtime/UI State]
+  Api[Fastify REST API]
+  Gateway[Fastify + ws Gateway]
+  Auth[Auth Service]
+  Messaging[Messaging Service]
+  Repo[Repository Interface]
+  Postgres[(PostgreSQL via Drizzle)]
+  Memory[(In-Memory Repository)]
+  Contracts[packages/contracts Zod Schemas]
 
-  Contracts[packages/contracts] -. shared event schemas .-> Browser
-  Contracts -. shared event schemas .-> Gateway
-  Config[packages/config] -. shared tooling/config .-> Browser
-  Config -. shared tooling/config .-> Gateway
+  Browser --> Query
+  Browser --> Store
+  Query -->|credentials: include| Api
+  Store -->|session cookie WebSocket| Gateway
+  Api --> Auth
+  Api --> Messaging
+  Gateway --> Auth
+  Gateway --> Messaging
+  Auth --> Repo
+  Messaging --> Repo
+  Repo --> Postgres
+  Repo -. tests and no DATABASE_URL .-> Memory
+  Contracts -. shared REST and WS payloads .-> Browser
+  Contracts -. shared REST and WS payloads .-> Api
+  Contracts -. shared REST and WS payloads .-> Gateway
 ```
 
-Phase 1 has no database, no Redis, no authentication, no Docker, no observability stack, and no production deployment. Messages and connected users are kept in memory until later phases introduce persistence and horizontal scaling.
+REST is responsible for loading existing state. WebSockets are responsible only for realtime message delivery, typing indicators, presence, read receipts, and conversation updates.
 
 ## Tech Stack
 
 Frontend:
 
-- React for the interactive chat UI.
+- React for the interactive messaging UI.
 - Vite for fast local development and simple frontend builds.
-- TypeScript in strict mode for shared type safety.
-- TailwindCSS for utility-first styling.
-- shadcn/ui for accessible, composable UI primitives.
-- Zustand only for WebSocket connection state.
-- TanStack Query only when server state over HTTP becomes useful.
+- React Router for `/login`, `/register`, `/conversations`, and `/chat/:conversationId`.
+- TanStack Query for authenticated REST server state.
+- Zustand for WebSocket connection state and realtime UI state.
+- TailwindCSS and local shadcn-style primitives for source-owned UI.
+- Zod for defensive client parsing of server responses and events.
 
 Backend:
 
 - Node.js for the runtime.
-- Fastify for HTTP server composition, health checks, and future API routes.
+- Fastify for HTTP routes, CORS, cookies, health checks, and WebSocket upgrades.
 - `ws` for raw WebSocket behavior without Socket.IO abstractions.
-- Zod for runtime validation of all incoming payloads.
-- TypeScript in strict mode.
+- Drizzle ORM with PostgreSQL for persistent users, sessions, conversations, members, and messages.
+- A repository interface with an in-memory implementation for tests and local no-database runs.
+- Zod for runtime validation at every external boundary.
+- Node `scrypt` and hashed secure session tokens for authentication.
 
 Monorepo and tooling:
 
@@ -63,27 +81,36 @@ Monorepo and tooling:
 - Husky and lint-staged for pre-commit checks.
 - Vitest for unit and integration tests.
 
-Future deployment targets:
-
-- Vercel for the web app.
-- Railway for the Node.js server.
-- Neon PostgreSQL for persistence.
-- Grafana Cloud for metrics, logs, and dashboards.
-
 ## Folder Structure
-
-The repository is currently in documentation/bootstrap phase. The target monorepo structure is:
 
 ```text
 .
+|-- .husky/                       # Git hooks
 |-- apps/
-|   |-- web/                 # React/Vite frontend
-|   `-- server/              # Fastify/ws backend
+|   |-- server/
+|   |   |-- drizzle/              # SQL migrations
+|   |   |-- src/auth/             # Registration, login, sessions, password hashing
+|   |   |-- src/chat/             # Legacy Phase 1 global chat service tests/support
+|   |   |-- src/config/           # Environment parsing and defaults
+|   |   |-- src/db/               # Drizzle schema
+|   |   |-- src/messaging/        # Conversation and message business logic
+|   |   |-- src/repositories/     # Repository interface, Postgres, memory implementations
+|   |   |-- src/server/           # Fastify app factory and REST routes
+|   |   |-- src/users/            # Legacy Phase 1 presence service tests/support
+|   |   |-- src/validation/       # WebSocket JSON parsing helpers
+|   |   `-- src/websocket/        # Authenticated WebSocket gateway
+|   `-- web/
+|       |-- src/components/chat/          # Chat surface components
+|       |-- src/components/conversations/ # Conversation list/header/status components
+|       |-- src/components/ui/            # Local UI primitives
+|       |-- src/lib/                      # API client, query client, URL helpers, parsers
+|       |-- src/routes/                   # Auth and messaging routes
+|       |-- src/state/                    # Zustand realtime store and reconnect helpers
+|       `-- src/styles/                   # Tailwind entrypoint
 |-- packages/
-|   |-- contracts/           # Shared Zod schemas and TypeScript event types
-|   |-- config/              # Shared TypeScript, ESLint, Prettier, and build config
-|   |-- ui/                  # Shared UI components when reuse is justified
-|   `-- utils/               # Shared framework-agnostic utilities
+|   |-- contracts/                # Shared Zod schemas, REST resources, WS events, constants
+|   |-- config/                   # Shared TypeScript config
+|   `-- utils/                    # Framework-agnostic helpers
 |-- docs/
 |   |-- architecture.md
 |   |-- websocket-protocol.md
@@ -92,55 +119,94 @@ The repository is currently in documentation/bootstrap phase. The target monorep
 |   |-- project-decisions.md
 |   |-- context-handoff.md
 |   `-- future-roadmap.md
-|-- .github/                 # CI workflows and repository automation
-|-- AGENTS.md                # Primary onboarding guide for future AI agents
+|-- AGENTS.md                     # Primary onboarding guide for future AI agents
 |-- README.md
 |-- package.json
+|-- pnpm-lock.yaml
 |-- pnpm-workspace.yaml
+|-- tsconfig.json
 `-- turbo.json
 ```
 
-Do not add a separate top-level `shared/` directory unless a future architecture decision explicitly replaces the `packages/*` boundary. Shared contracts belong in `packages/contracts`.
+Shared contracts belong in `packages/contracts`. Do not add a top-level `shared/` directory unless an architecture decision explicitly replaces the current package boundary.
 
 ## Getting Started
 
-Current status: the application code has not been scaffolded yet. Documentation is in place so the next implementation session can create the monorepo consistently.
+Requirements:
 
-After the workspace is scaffolded, the expected setup flow is:
+- Node.js `>=22`
+- pnpm `>=10`
+- PostgreSQL for persistent local data
+
+Install dependencies:
 
 ```bash
 pnpm install
+```
+
+Create environment files:
+
+```bash
+cp apps/server/.env.example apps/server/.env
+cp apps/web/.env.example apps/web/.env
+```
+
+For persistent storage, set `DATABASE_URL` in `apps/server/.env`, then apply migrations:
+
+```bash
+pnpm db:migrate
+```
+
+If `DATABASE_URL` is omitted or blank, the server uses the in-memory repository. That mode is useful for tests and quick local exploration, but data resets on server restart.
+
+Run the full local stack:
+
+```bash
 pnpm dev
 ```
 
-Expected local URLs once implemented:
+Local URLs:
 
 - Web app: `http://localhost:5173`
 - Server: `http://localhost:3000`
 - WebSocket endpoint: `ws://localhost:3000/ws`
 
+Important environment variables:
+
+- `DATABASE_URL`: PostgreSQL connection string.
+- `SESSION_COOKIE_NAME`: defaults to `pulse_chat_session`.
+- `SESSION_TTL_DAYS`: defaults to `30`.
+- `SECURE_COOKIES`: use `true` behind HTTPS.
+- `ALLOWED_ORIGINS`: comma-separated CORS allow list.
+- `VITE_API_URL`: frontend REST base URL.
+- `VITE_WS_URL`: frontend WebSocket URL.
+
 ## Development Workflow
 
-Recommended order for Phase 1:
+Recommended workflow for new work:
 
-1. Create pnpm workspace, Turborepo config, TypeScript config, ESLint, Prettier, Husky, and lint-staged.
-2. Create `packages/contracts` with Zod schemas and discriminated unions for all WebSocket events.
-3. Create `apps/server` with Fastify, `ws`, config loading, validation, WebSocket gateway, chat service, and user presence service.
-4. Create `apps/web` with React routes for `/` and `/chat`.
-5. Add WebSocket client state with Zustand.
-6. Build chat UI components.
-7. Add tests for contracts, server services, WebSocket validation, and frontend state.
-8. Update documentation and `docs/context-handoff.md` before finishing the session.
+1. Read `AGENTS.md` and `docs/context-handoff.md`.
+2. Update `packages/contracts` first if REST resources or WebSocket events change.
+3. Keep backend business logic in `auth` and `messaging` services, not in REST route handlers or WebSocket handlers.
+4. Keep persistence behind `AppRepository`.
+5. Use REST and TanStack Query for loading existing server state.
+6. Use WebSockets and Zustand for live events only.
+7. Add or update focused tests near the changed behavior.
+8. Run verification from the repository root.
+9. Update relevant docs and overwrite `docs/context-handoff.md`.
 
-Documentation is part of the implementation. Update these files whenever behavior, setup, architecture, or roadmap changes.
+Documentation is part of the implementation. Update README, architecture, protocol, roadmap, decisions, and handoff files whenever behavior, setup, or architecture changes.
 
 ## Available Scripts
 
-No scripts exist yet because the project has not been scaffolded. The target root scripts are:
+Root scripts:
 
 ```json
 {
-  "dev": "turbo dev",
+  "dev": "pnpm build:packages && turbo dev --parallel",
+  "build:packages": "turbo build --filter=@pulse-chat/contracts --filter=@pulse-chat/utils",
+  "db:generate": "drizzle-kit generate --config apps/server/drizzle.config.ts",
+  "db:migrate": "drizzle-kit migrate --config apps/server/drizzle.config.ts",
   "build": "turbo build",
   "lint": "turbo lint",
   "typecheck": "turbo typecheck",
@@ -150,24 +216,25 @@ No scripts exist yet because the project has not been scaffolded. The target roo
 }
 ```
 
-Expected package-level scripts:
+Package scripts:
 
 - `apps/web`: `dev`, `build`, `preview`, `lint`, `typecheck`, `test`.
 - `apps/server`: `dev`, `build`, `start`, `lint`, `typecheck`, `test`.
 - `packages/contracts`: `build`, `lint`, `typecheck`, `test`.
+- `packages/utils`: `build`, `lint`, `typecheck`, `test`.
 
 ## Coding Standards
 
 - TypeScript must run in strict mode.
 - Do not use `any`; prefer `unknown`, generics, or explicit domain types.
 - Validate external input at the boundary with Zod.
-- Keep business logic out of WebSocket handlers.
+- Keep business logic out of REST route handlers and WebSocket handlers.
 - Prefer composition over inheritance.
 - Keep modules small, focused, and single-purpose.
-- Avoid duplicated code; extract shared behavior when reuse is real.
 - Use named exports for shared modules.
 - Keep frontend code out of backend domain internals.
 - Keep backend code out of frontend UI packages.
+- Keep database and ORM types behind server repositories.
 - Avoid circular dependencies.
 
 See [docs/coding-guidelines.md](docs/coding-guidelines.md) for the full standard.
@@ -177,99 +244,121 @@ See [docs/coding-guidelines.md](docs/coding-guidelines.md) for the full standard
 ```mermaid
 sequenceDiagram
   participant Client
+  participant REST as Fastify REST API
   participant Gateway as WebSocket Gateway
-  participant Validation as Zod Validation
-  participant Users as User Service
-  participant Chat as Chat Service
+  participant Auth as Auth Service
+  participant Messaging as Messaging Service
+  participant Repo as Repository
 
-  Client->>Gateway: join
-  Gateway->>Validation: validate join payload
-  Validation-->>Gateway: parsed username
-  Gateway->>Users: register client
-  Gateway->>Chat: read recent history
-  Gateway-->>Client: chat.history
-  Gateway-->>Client: users.online
-  Gateway-->>Client: pong
-  Gateway-->>Client: error if invalid
-  Gateway-->>Client: user.joined broadcast
+  Client->>REST: POST /auth/login or /auth/register
+  REST->>Auth: validate credentials and create session
+  Auth->>Repo: persist hashed session token
+  REST-->>Client: Set-Cookie pulse_chat_session
+
+  Client->>REST: GET /conversations
+  REST->>Messaging: list conversations
+  Messaging->>Repo: read persisted state
+  REST-->>Client: conversations
+
+  Client->>Gateway: WebSocket /ws with session cookie
+  Gateway->>Auth: authenticate session token
+  Gateway-->>Client: error + close if unauthorized
+  Gateway-->>Client: presence.updated broadcasts
 
   Client->>Gateway: message.send
-  Gateway->>Validation: validate message payload
-  Gateway->>Chat: create message
+  Gateway->>Messaging: create persisted message
+  Messaging->>Repo: insert or dedupe by clientMessageId
   Gateway-->>Client: message.new broadcast
+  Gateway-->>Client: message.delivered to sender
 
-  Client->>Gateway: ping
-  Gateway-->>Client: pong
+  Client->>Gateway: typing.start / typing.stop
+  Gateway->>Messaging: verify membership
+  Gateway-->>Client: typing.started / typing.stopped to other members
 
-  Gateway->>Users: remove client on disconnect
-  Gateway-->>Client: user.left broadcast
-  Gateway-->>Client: users.online broadcast
+  Client->>Gateway: message.read
+  Gateway->>Messaging: update member read position
+  Gateway-->>Client: message.read broadcast
 ```
 
-Client to server events:
+Client to server WebSocket events:
 
-- `join`
+- `conversation.create`
 - `message.send`
+- `message.read`
+- `typing.start`
+- `typing.stop`
 - `ping`
 
-Server to client events:
+Server to client WebSocket events:
 
-- `chat.history`
+- `conversation.created`
 - `message.new`
-- `user.joined`
-- `user.left`
-- `users.online`
+- `message.delivered`
+- `message.read`
+- `presence.updated`
+- `typing.started`
+- `typing.stopped`
 - `pong`
 - `error`
 
-All payloads must use shared discriminated unions from `packages/contracts` and must be validated before use.
+The legacy Phase 1 `join`, `chat.history`, `user.joined`, `user.left`, and `users.online` contracts remain in the shared package for compatibility with existing service tests, but the Phase 2 application flow uses authenticated conversations instead of anonymous global-room joins.
 
 ## Current Project Status
 
-Current phase: documentation/bootstrap.
+Current phase: Phase 2 implemented.
 
 Completed:
 
-- Product and learning goals captured.
-- Target Phase 1 architecture documented.
-- WebSocket protocol documented.
-- AI agent onboarding and handoff process documented.
-
-Not yet implemented:
-
 - pnpm/Turborepo workspace.
-- React frontend.
-- Fastify WebSocket server.
-- Shared contracts package.
-- Tests, linting, formatting, and CI.
+- Shared `packages/contracts` package with REST resource schemas and WebSocket discriminated unions.
+- Fastify + `ws` backend with REST auth routes, REST conversation/message routes, authenticated WebSocket gateway, heartbeat cleanup, and safe errors.
+- Drizzle PostgreSQL schema and SQL migration for users, sessions, conversations, members, and messages.
+- Repository interface with PostgreSQL and in-memory implementations.
+- Secure session-based authentication with password hashing and hashed session tokens.
+- React/Vite frontend with login, register, conversation list, chat route, protected routes, optimistic messages, TanStack Query, and Zustand realtime state.
+- Unit and integration tests for contracts, utilities, services, REST routes, WebSocket behavior, parsers, and frontend state helpers.
+- ESLint, Prettier, Husky, lint-staged, Vitest, and strict TypeScript.
+
+Not included yet:
+
+- Redis/pub-sub.
+- Docker.
+- Observability.
+- Horizontal scaling.
+- Kubernetes.
+- Production deployment optimization.
+- Group conversations, attachments, reactions, or search.
 
 ## Future Roadmap
 
+Phase 0: Documentation and bootstrap.
+
 Phase 1: In-memory global chat with WebSocket validation, reconnect, heartbeat, online users, and responsive UI.
 
-Phase 2: Local developer hardening with tests, Docker, CI, and better error reporting.
+Phase 2: Persistent one-to-one messaging with authentication, PostgreSQL/Drizzle, REST state loading, authenticated WebSockets, optimistic UI, and duplicate prevention.
 
-Phase 3: Persistence with PostgreSQL, message history, and basic account identity.
+Phase 3: Developer hardening with CI, browser smoke tests, stronger component coverage, and optional local Docker support.
 
-Phase 4: Multi-room chat, authorization boundaries, and richer user presence.
+Phase 4: Group conversations, richer authorization, profiles, moderation primitives, and history pagination.
 
-Phase 5: Redis-backed pub/sub, horizontal WebSocket scaling, and observability.
+Phase 5: Redis-backed pub/sub, horizontal WebSocket scaling, presence synchronization, rate limiting, and load testing.
 
-Phase 6: Production deployment, security hardening, and operational runbooks.
+Phase 6: Observability, production deployment, operational runbooks, and security hardening.
 
 See [docs/future-roadmap.md](docs/future-roadmap.md) for more detail.
 
 ## Screenshots
 
-Screenshots will be added after the UI exists.
+Screenshots will be added after the UI is captured.
 
 Placeholder:
 
-- Join screen
-- Main chat
-- Mobile chat
-- Connection status states
-- Online users panel
+- Login screen
+- Register screen
+- Conversation list
+- Chat screen
+- Mobile conversation view
+- Connection and reconnect states
 
 ## License
 
